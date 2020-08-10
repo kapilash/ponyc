@@ -1,6 +1,7 @@
 use "ponytest"
 use "backpressure"
 use "capsicum"
+use "cli"
 use "collections"
 use "files"
 use "itertools"
@@ -25,6 +26,9 @@ actor Main is TestList
     test(_TestBadExec)
     test(_TestLongRunningChild)
     test(_TestKillLongRunningChild)
+    ifdef windows then
+      test(_TestWindowsStdout)
+    end
 
 class _PathResolver
   let _path: Array[FilePath] val
@@ -676,6 +680,82 @@ class iso _TestKillLongRunningChild is UnitTest
 
   fun timed_out(h: TestHelper) =>
     h.complete(false)
+
+
+class _TestWindowsStdout is UnitTest
+  fun name(): String => "process/test-windows-stdout"
+  fun exclusion_group(): String => "process-monitor"
+
+  fun apply(h: TestHelper) ? =>
+    let auth = h.env.root as AmbientAuth
+    let tmp_dir = FilePath.mkdtemp(auth, "test-windows-stdout.")?
+    let script_path = tmp_dir.join("test.ps1")?
+    try
+      with script_file = CreateFile(script_path) as File do
+        script_file.print("Write-Output \"One\"")
+        script_file.print("Write-Output \"Two\"")
+        script_file.print("Write-Output \"Three\"")
+      end
+
+      let n = _TestWindowsStdoutNotify(h,
+        {(h: TestHelper, stdout: String) =>
+          h.assert_true(stdout.contains("One"))
+          h.assert_true(stdout.contains("Two"))
+          h.assert_true(stdout.contains("Three"))
+        })
+      let p = _find_powershell(auth, h.env.vars)?
+      let pm = ProcessMonitor(auth, auth, consume n, p,
+        recover [ "-File"; "test.ps1" ] end, h.env.vars, tmp_dir)?
+      pm.done_writing()
+      h.dispose_when_done(pm)
+      h.long_test(3_000_000_000)
+    then
+      tmp_dir.remove()
+    end
+
+  fun _find_powershell(auth: AmbientAuth, vars: Array[String] val)
+    : FilePath ?
+  =>
+    let ev = EnvVars(vars, "", true)
+    let execs = [ "pwsh.exe"; "PowerShell.exe" ]
+    let paths = recover val Path.split_list(ev.get_or_else("path", "")) end
+    for path in paths.values() do
+      let dir = FilePath(auth, path)?
+      for exec in execs.values() do
+        let bin = FilePath(dir, exec)?
+        if bin.exists() then
+          return bin
+        end
+      end
+    end
+    error
+
+
+class _TestWindowsStdoutNotify is ProcessNotify
+  let _stdout: String ref = String
+  let _stderr: String ref = String
+  let _h: TestHelper
+  let _c: {(TestHelper, String)} iso
+
+  new iso create(h: TestHelper, c: {(TestHelper, String)} iso) =>
+    _h = h
+    _c = consume c
+
+  fun ref stdout(p: ProcessMonitor ref, data: Array[U8] iso) =>
+    _stdout.append(consume data)
+  fun ref stderr(p: ProcessMonitor ref, data: Array[U8] iso) =>
+    _stderr.append(consume data)
+  fun ref failed(p: ProcessMonitor ref, e: ProcessError) =>
+    _h.log(e.string())
+    _h.fail("process failed")
+  fun ref dispose(p: ProcessMonitor ref, e: ProcessExitStatus) =>
+    match e
+    | Exited(0) =>
+      _c(_h, _stdout.clone())
+      _h.complete(true)
+    else
+      _h.fail("process exited with nonzero code")
+    end
 
 
 class _ProcessClient is ProcessNotify
