@@ -683,34 +683,60 @@ class iso _TestKillLongRunningChild is UnitTest
 
 
 class _TestWindowsStdout is UnitTest
+  var _tmp_dir: (FilePath | None) = None
+
   fun name(): String => "process/test-windows-stdout"
   fun exclusion_group(): String => "process-monitor"
 
+  fun ref set_up(h: TestHelper) =>
+    try
+      let auth = h.env.root as AmbientAuth
+      _tmp_dir = FilePath.mkdtemp(auth, "test-windows-stdout.")?
+    else
+      h.fail("could not create temporary directory")
+    end
+
+  fun tear_down(h: TestHelper) =>
+    match _tmp_dir
+    | let tmp_dir: FilePath =>
+      tmp_dir.remove()
+    end
+
   fun apply(h: TestHelper) ? =>
     let auth = h.env.root as AmbientAuth
-    let tmp_dir = FilePath.mkdtemp(auth, "test-windows-stdout.")?
-    let script_path = tmp_dir.join("test.ps1")?
+    let tmp_dir = try _tmp_dir as FilePath else return end
+    let num: USize = 1000
+
     try
+      let script_path = tmp_dir.join("test.ps1")?
       with script_file = CreateFile(script_path) as File do
-        script_file.print("Write-Output \"One\"")
-        script_file.print("Write-Output \"Two\"")
-        script_file.print("Write-Output \"Three\"")
+        for i in Range(0, num) do
+          script_file.print("Write-Output \"---" + i.string() + "---\"")
+          script_file.print("Start-Sleep -Milliseconds 3")
+        end
       end
+
+      let pwsh =
+        try
+          _find_powershell(auth, h.env.vars)?
+        else
+          h.fail("could not find PowerShell")
+          return
+        end
 
       let n = _TestWindowsStdoutNotify(h,
         {(h: TestHelper, stdout: String) =>
-          h.assert_true(stdout.contains("One"))
-          h.assert_true(stdout.contains("Two"))
-          h.assert_true(stdout.contains("Three"))
+          for i in Range(0, num) do
+            h.assert_true(stdout.contains("---" + i.string() + "---"))
+          end
         })
-      let p = _find_powershell(auth, h.env.vars)?
-      let pm = ProcessMonitor(auth, auth, consume n, p,
-        recover [ "-File"; "test.ps1" ] end, h.env.vars, tmp_dir)?
+      let pm = ProcessMonitor(auth, auth, consume n, pwsh,
+        recover [ "-File"; "test.ps1" ] end, h.env.vars, tmp_dir)
       pm.done_writing()
       h.dispose_when_done(pm)
-      h.long_test(3_000_000_000)
-    then
-      tmp_dir.remove()
+      h.long_test(60_000_000_000)
+    else
+      h.fail("could not create script file")
     end
 
   fun _find_powershell(auth: AmbientAuth, vars: Array[String] val)
@@ -734,6 +760,7 @@ class _TestWindowsStdout is UnitTest
 class _TestWindowsStdoutNotify is ProcessNotify
   let _stdout: String ref = String
   let _stderr: String ref = String
+
   let _h: TestHelper
   let _c: {(TestHelper, String)} iso
 
