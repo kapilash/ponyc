@@ -5,7 +5,7 @@
 #if PONY_LLVM >= 700
 
 #include "llvm_config_begin.h"
-#  include <llvm/ExecutionEngine/ExecutionEngine.h>
+
 #  include <llvm/ExecutionEngine/JITSymbol.h>
 #  include <llvm/ExecutionEngine/SectionMemoryManager.h>
 #  include <llvm/ExecutionEngine/Orc/CompileUtils.h>
@@ -13,7 +13,9 @@
 #  include <llvm/ExecutionEngine/Orc/Legacy.h>
 #  include "llvm/ExecutionEngine/Orc/ExecutionUtils.h"
 #  include <llvm/ExecutionEngine/Orc/IRCompileLayer.h>
-#  include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
+#include <llvm/ExecutionEngine/Orc/IRTransformLayer.h>
+# include <llvm/IR/LegacyPassManager.h>
+#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
 #  include <llvm/IR/DataLayout.h>
 #  include <llvm/IR/Mangler.h>
 #  include <llvm/Support/Error.h>
@@ -25,35 +27,41 @@ using namespace llvm::orc;
 
 #if PONY_LLVM >= 800
 
+#define MAIN_DYLIB "<main>"
 class PonyJIT
 {
   ExecutionSession _es;
   RTDyldObjectLinkingLayer _obj_layer;
   IRCompileLayer _compile_layer;
+  IRTransformLayer _optimize_layer;
 
   DataLayout _dl;
   MangleAndInterner _mangle;
   ThreadSafeContext _ctx;
+  JITDylib& _mainJD;
 
 public:
   PonyJIT(JITTargetMachineBuilder jtmb, DataLayout dl) :
     _es(),
-    _obj_layer(_es, []() { return llvm::make_unique<SectionMemoryManager>();}),
-    _compile_layer(_es, _obj_layer, ConcurrentIRCompiler(std::move(jtmb))),
+    _obj_layer(_es, []() { return std::make_unique<SectionMemoryManager>();}),
+    _compile_layer(_es, _obj_layer, std::make_unique<ConcurrentIRCompiler>(std::move(jtmb))),
+      _optimize_layer(_es, _compile_layer, optimizeModule),
     _dl(std::move(dl)),
     _mangle(_es, _dl),
-    _ctx(llvm::make_unique<LLVMContext>())
+    _ctx(std::make_unique<LLVMContext>()),
+    _mainJD(_es.createBareJITDylib(MAIN_DYLIB))
   {
 #if PONY_LLVM < 900
     _es.getMainJITDylib().setGenerator(
       cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(_dl)));
 #else
-    _es.getMainJITDylib().setGenerator(
-      cantFail(DynamicLibrarySearchGenerator::GetForCurrentProcess(
-        _dl.getGlobalPrefix())));
+      _mainJD.addGenerator(
+          cantFail(
+              DynamicLibrarySearchGenerator::GetForCurrentProcess(
+                  _dl.getGlobalPrefix())));
 #endif
 
-#if (PONY_LLVM >= 800) && defined(PLATFORM_IS_WINDOWS)
+#if defined(PLATFORM_IS_WINDOWS)
     _obj_layer.setOverrideObjectFlagsWithResponsibilityFlags(true);
 #endif
   }
@@ -68,18 +76,17 @@ public:
     if (!dl)
       return dl.takeError();
 
-    return llvm::make_unique<PonyJIT>(std::move(*jtmb), std::move(*dl));
+    return std::make_unique<PonyJIT>(std::move(*jtmb), std::move(*dl));
   }
 
-  Error addModule(std::unique_ptr<Module> module)
+  Error addModule(std::unique_ptr<Module> mod)
   {
-    return _compile_layer.add(_es.getMainJITDylib(),
-      ThreadSafeModule(std::move(module), _ctx));
+      return _optimize_layer.add(_mainJD, ThreadSafeModule(std::move(mod), _ctx));
   }
 
   Expected<JITEvaluatedSymbol> lookup(StringRef name)
   {
-    return _es.lookup({&_es.getMainJITDylib()}, _mangle(name.str()));
+      return _es.lookup({ &_mainJD }, _mangle(name.str()));
   }
 
   JITTargetAddress getSymbolAddress(const char* name)
@@ -89,6 +96,21 @@ public:
       return 0;
 
     return symbol->getAddress();
+  }
+
+  static Expected<ThreadSafeModule> optimizeModule(ThreadSafeModule tsm,
+      const MaterializationResponsibility& r)
+  {
+      tsm.withModuleDo([](Module& m) {
+          auto fpm = std::make_unique<legacy::FunctionPassManager>(&m);
+          // ...
+          fpm->doInitialization();
+
+          for (auto& f : m)
+              fpm->run(f);
+      });
+
+      return std::move(tsm);
   }
 };
 

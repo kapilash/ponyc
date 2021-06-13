@@ -63,7 +63,7 @@ static void windows_stat(const char* path, pony_stat_t* p, struct __stat64* st,
 {
   WIN32_FILE_ATTRIBUTE_DATA fa;
 
-  if(!GetFileAttributesEx(path, GetFileExInfoStandard, &fa))
+  if(!GetFileAttributesExA(path, GetFileExInfoStandard, &fa))
     return;
 
   p->symlink = (attr & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
@@ -229,7 +229,7 @@ PONY_API bool pony_os_stat(const char* path, pony_stat_t* p)
 #if defined(PLATFORM_IS_WINDOWS)
   WIN32_FILE_ATTRIBUTE_DATA fa;
 
-  if(!GetFileAttributesEx(path, GetFileExInfoStandard, &fa))
+  if(!GetFileAttributesExA(path, GetFileExInfoStandard, &fa))
     return false;
 
   struct __stat64 st;

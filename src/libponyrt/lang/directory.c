@@ -94,7 +94,7 @@ PONY_API void ponyint_windows_find_data_free(WIN32_FIND_DATA* data)
   POOL_FREE(WIN32_FIND_DATA, data);
 }
 
-PONY_API const char* ponyint_windows_readdir(WIN32_FIND_DATA* find)
+PONY_API const char* ponyint_windows_readdir(WIN32_FIND_DATAA* find)
 {
   size_t len = strlen(find->cFileName) + 1;
 

@@ -4,7 +4,7 @@
 #include "llvm_config_begin.h"
 
 #include <llvm/IR/Module.h>
-#include <llvm/IR/CallSite.h>
+#include <llvm/IR/AbstractCallSite.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Dominators.h>
 #include <llvm/IR/DebugInfo.h>
@@ -123,14 +123,14 @@ public:
   bool runOnInstruction(IRBuilder<>& builder, Instruction* inst,
     DominatorTree& dt, Function& f)
   {
-    CallSite call(inst);
-
-    if(!call.getInstruction())
-      return false;
-
+      auto callBase = dyn_cast<CallBase>(inst);
+      if (callBase == nullptr)
+      {
+          return false;
+      }
+      CallBase& call = *callBase;
     Function* fun = call.getCalledFunction();
-
-    if(fun == NULL)
+    if(fun == nullptr)
       return false;
 
     bool small = false;
@@ -144,11 +144,11 @@ public:
       return false;
     }
 
-    Value* size = call.getArgument(1);
+    Value* size = call.getArgOperand(1);
     c->opt->check.stats.heap_alloc++;
     ConstantInt* int_size = dyn_cast_or_null<ConstantInt>(size);
 
-    if(int_size == NULL)
+    if(int_size == nullptr)
     {
       print_transform(c, inst, "variable size allocation");
       return false;
@@ -187,21 +187,20 @@ public:
     AllocaInst* replace = new AllocaInst(builder.getInt8Ty(), int_size, align,
       "", begin);
 #else
-    AllocaInst* replace = new AllocaInst(builder.getInt8Ty(),
-      0, int_size, align, "", begin);
+    AllocaInst* replace = new AllocaInst(builder.getInt1Ty(), 0, int_size, Align(align), "", begin);
 #endif
 
-    replace->setDebugLoc(call->getDebugLoc());
+    replace->setDebugLoc(inst->getDebugLoc());
     inst->replaceAllUsesWith(replace);
 
 #if PONY_LLVM < 400
     (void)f;
 #else
-    if (call.isInvoke())
+    auto invoke = dyn_cast<InvokeInst>(static_cast<Instruction*>(&call));
+    if (invoke != nullptr)
     {
-      InvokeInst *invoke = cast<InvokeInst>(call.getInstruction());
       BranchInst::Create(invoke->getNormalDest(), invoke);
-      invoke->getUnwindDest()->removePredecessor(call->getParent());
+      invoke->getUnwindDest()->removePredecessor(call.getParent());
     }
     CallGraphWrapperPass *cg_pass =
       getAnalysisIfAvailable<CallGraphWrapperPass>();
@@ -212,8 +211,7 @@ public:
 #if PONY_LLVM < 900
       cg_node->removeCallEdgeFor(call);
 #else
-      CallInst *callInst = cast<CallInst>(call.getInstruction());
-      cg_node->removeCallEdgeFor(*callInst);
+      cg_node->removeCallEdgeFor(call);
 #endif
     }
 #endif
@@ -223,7 +221,10 @@ public:
     {
       // Force constructor inlining to see if fields can be stack-allocated.
       InlineFunctionInfo ifi{};
-      InlineFunction(CallSite(new_call), ifi);
+      auto new_call_base = dyn_cast<CallBase>(new_call);
+      if (new_call_base) {
+          InlineFunction(*new_call_base, ifi);
+      }
     }
 
     print_transform(c, replace, "stack allocation");
@@ -259,9 +260,14 @@ public:
         case Instruction::Call:
         case Instruction::Invoke:
         {
-          CallSite call(inst);
+            auto call_base = dyn_cast<CallBase>(inst);
+            if (!call_base) {
+                return false;
+            }
 
-          if(call.onlyReadsMemory())
+            CallBase& call = *call_base;
+
+          if (call.onlyReadsMemory())
           {
             // If the function is readnone or readonly, and the return value
             // isn't and does not contain a pointer, it isn't captured.
@@ -294,11 +300,9 @@ public:
                 return false;
               }
 
-              if(call.isCall())
+              auto ci = dyn_cast<CallInst>(inst);
+              if(ci && ci->isTailCall())
               {
-                CallInst* ci = cast<CallInst>(inst);
-
-                if(ci->isTailCall())
                   tail.push_back(ci);
               }
             }
@@ -529,14 +533,15 @@ public:
 
   bool runOnInstruction(Instruction* inst, Value* ctx)
   {
-    CallSite call(inst);
+      auto call_base = dyn_cast<CallBase>(inst);
+      if (!call_base) {
+          return false;
+      }
 
-    if(!call.getInstruction())
-      return false;
-
+      CallBase& call = *call_base;
     Function* fun = call.getCalledFunction();
 
-    if(fun == NULL)
+    if(fun == nullptr)
       return false;
 
     if(fun->getName().compare("pony_ctx") != 0)
@@ -639,14 +644,16 @@ public:
     if(std::find(removed.begin(), removed.end(), inst) != removed.end())
       return false;
 
-    CallSite call(inst);
+    auto call_base = dyn_cast<CallBase>(inst);
+    if (!call_base) {
+        return false;
+    }
 
-    if(!call.getInstruction())
-      return false;
+    CallBase& call = *call_base;
 
     Function* fun = call.getCalledFunction();
 
-    if(fun == NULL)
+    if(fun == nullptr)
       return false;
 
     int alloc_type;
@@ -659,14 +666,14 @@ public:
     } else if(fun->getName().compare("pony_alloc_large") == 0) {
       alloc_type = -1;
     } else if(fun->getName().compare("pony_realloc") == 0) {
-      Value* old_ptr = call.getArgument(1);
-      if(dyn_cast_or_null<ConstantPointerNull>(old_ptr) == NULL)
+      Value* old_ptr = call.getArgOperand(1);
+      if(dyn_cast_or_null<ConstantPointerNull>(old_ptr) == nullptr)
         return false;
 
-      Value* new_size = call.getArgument(2);
+      Value* new_size = call.getArgOperand(2);
 
       builder.SetInsertPoint(inst);
-      Value* replace = mergeNoOp(builder, call.getArgument(0), new_size);
+      Value* replace = mergeNoOp(builder, call.getArgOperand(0), new_size);
       new_allocs.push_back(reinterpret_cast<Instruction*>(replace));
       inst->replaceAllUsesWith(replace);
       removed.push_back(inst);
@@ -676,7 +683,7 @@ public:
       return false;
     }
 
-    Value* old_size = call.getArgument(1);
+    Value* old_size = call.getArgOperand(1);
     ConstantInt* old_int_size = dyn_cast_or_null<ConstantInt>(old_size);
 
     CallInst* realloc = findRealloc(inst);
@@ -707,7 +714,7 @@ public:
         // Not realloc'd, but we can still turn a generic allocation into a
         // small/large one.
         builder.SetInsertPoint(inst);
-        replace = mergeConstant(builder, call.getArgument(0), old_alloc_size);
+        replace = mergeConstant(builder, call.getArgOperand(0), old_alloc_size);
       } else {
         Value* new_size = realloc->getArgOperand(2);
 
@@ -722,7 +729,7 @@ public:
             return false;
 
           builder.SetInsertPoint(realloc);
-          replace = mergeNoOp(builder, call.getArgument(0), new_size);
+          replace = mergeNoOp(builder, call.getArgOperand(0), new_size);
           new_allocs.push_back(reinterpret_cast<Instruction*>(replace));
         } else {
           size_t new_alloc_size = (size_t)new_int_size->getZExtValue();
@@ -774,12 +781,13 @@ public:
     return realloc;
   }
 
-  Value* mergeReallocChain(IRBuilder<>& builder, CallSite alloc,
+  Value* mergeReallocChain(IRBuilder<>& builder, CallBase& alloc,
     CallInst** last_realloc, size_t alloc_size,
     SmallVector<Instruction*, 16>& new_allocs)
   {
-    builder.SetInsertPoint(alloc.getInstruction());
-    Value* replace = mergeConstant(builder, alloc.getArgument(0), alloc_size);
+
+    builder.SetInsertPoint(&alloc);
+    Value* replace = mergeConstant(builder, alloc.getArgOperand(0), alloc_size);
 
     while(alloc_size == 0)
     {
@@ -796,13 +804,13 @@ public:
       if(new_int_size == NULL)
       {
         builder.SetInsertPoint(next_realloc);
-        replace = mergeNoOp(builder, alloc.getArgument(0), new_size);
+        replace = mergeNoOp(builder, alloc.getArgOperand(0), new_size);
         alloc_size = 1;
       } else {
         alloc_size = (size_t)new_int_size->getZExtValue();
 
         builder.SetInsertPoint(*last_realloc);
-        replace = mergeConstant(builder, alloc.getArgument(0), alloc_size);
+        replace = mergeConstant(builder, alloc.getArgOperand(0), alloc_size);
       }
 
       new_allocs.push_back(reinterpret_cast<Instruction*>(replace));
@@ -922,7 +930,7 @@ static void addMergeReallocPass(const PassManagerBuilder& pmb,
     pm.add(new MergeRealloc());
 }
 
-class MergeMessageSend : public BasicBlockPass
+class MergeMessageSend : public FunctionPass
 {
 public:
   struct MsgFnGroup
@@ -943,7 +951,7 @@ public:
   Function* msg_chain_fn;
   Function* sendv_single_fn;
 
-  MergeMessageSend() : BasicBlockPass(ID)
+  MergeMessageSend() : FunctionPass(ID)
   {
     c = the_compiler;
     send_next_fn = nullptr;
@@ -1091,8 +1099,11 @@ public:
     {
       if(iter->getMetadata("pony.msgsend") != NULL)
       {
-        CallSite call(&(*iter));
-        Function* fun = call.getCalledFunction();
+          CallBase* callBase = dyn_cast<CallBase>(&(*iter));
+          if (callBase == nullptr)
+              continue;
+       
+        Function* fun = callBase->getCalledFunction();
         pony_assert(fun != NULL);
 
         for(size_t i = 0; i < names.size(); i++)
@@ -1124,12 +1135,14 @@ public:
         auto prev = std::prev(src);
         src->moveBefore(&(*dst));
 
-        if(prev->getMetadata("pony.msgsend") == NULL)
+        if(prev->getMetadata("pony.msgsend") == nullptr)
           break;
 
-        CallSite call(&(*prev));
-        auto fun = call.getCalledFunction();
-        pony_assert(fun != NULL);
+        auto call = dyn_cast<CallBase>(&*prev);
+        if (call == nullptr)
+            break;
+        auto fun = call->getCalledFunction();
+        pony_assert(fun != nullptr);
 
         if(fun->getName().compare("pony_alloc_msg") == 0)
           break;
@@ -1170,8 +1183,9 @@ public:
 
         iter++;
         first.done->eraseFromParent();
-        CallSite call(&(*next.trace));
-        call.setCalledFunction(send_next_fn);
+        auto call = dyn_cast<CallBase>(&*next.trace);
+        if (call == nullptr)
+        call->setCalledFunction(send_next_fn);
 
         auto first_send_post = std::next(first.send);
         auto next_done_post = std::next(next.done);
@@ -1305,6 +1319,16 @@ public:
     fn->addAttribute(1, Attribute::NoCapture);
     fn->addAttribute(2, Attribute::ReadNone);
     return fn;
+  }
+  
+  bool runOnFunction(Function& f)
+  {
+      bool changed = false;
+      for (auto block = f.begin(), end = f.end(); block != end; ++block) {
+          changed = changed || runOnBasicBlock(*block);
+      }
+
+      return changed;
   }
 };
 

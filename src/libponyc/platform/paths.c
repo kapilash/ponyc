@@ -15,6 +15,7 @@
 #endif
 
 #ifdef PLATFORM_IS_WINDOWS
+#include <tchar.h>
 # define PATH_SLASH '\\'
 #else
 # define PATH_SLASH '/'
@@ -31,13 +32,13 @@ PONY_DIR* pony_opendir(const char* path, PONY_ERRNO* err)
     return NULL;
   }
 
-  TCHAR win_path[MAX_PATH];
-  strcpy(win_path, path);
+  char win_path[MAX_PATH];
+  strncpy(win_path, path, path_len);
   strcat(win_path, "\\*");
 
   PONY_DIR* dir = POOL_ALLOC(PONY_DIR);
 
-  dir->ptr = FindFirstFile(win_path, &dir->info);
+  dir->ptr = FindFirstFileA(win_path, &dir->info);
 
   if(dir->ptr == INVALID_HANDLE_VALUE)
   {
@@ -66,8 +67,9 @@ PONY_DIR* pony_opendir(const char* path, PONY_ERRNO* err)
 char* pony_realpath(const char* path, char* resolved)
 {
 #ifdef PLATFORM_IS_WINDOWS
-  if(GetFullPathName(path, FILENAME_MAX, resolved, NULL) == 0 ||
-    GetFileAttributes(resolved) == INVALID_FILE_ATTRIBUTES)
+
+  if(GetFullPathNameA(path, FILENAME_MAX, resolved, NULL) == 0 ||
+    GetFileAttributesA(resolved) == INVALID_FILE_ATTRIBUTES)
     return NULL;
 
   // Strip any trailing backslashes
@@ -102,7 +104,7 @@ void pony_closedir(PONY_DIR* dir)
 PONY_DIRINFO* pony_dir_entry_next(PONY_DIR* dir)
 {
 #ifdef PLATFORM_IS_WINDOWS
-  if(FindNextFile(dir->ptr, &dir->info) != 0)
+  if(FindNextFileA(dir->ptr, &dir->info) != 0)
     return &dir->info;
 
   return NULL;
@@ -134,7 +136,7 @@ void pony_mkdir(const char* path)
       buf[i + 1] = '\0';
 
 #ifdef PLATFORM_IS_WINDOWS
-      CreateDirectory(buf, NULL);
+      CreateDirectoryA(buf, NULL);
 #else
       mkdir(buf, 0777);
 #endif
@@ -143,7 +145,7 @@ void pony_mkdir(const char* path)
 
   // Create final directory
 #ifdef PLATFORM_IS_WINDOWS
-  CreateDirectory(path, NULL);
+  CreateDirectoryA(path, NULL);
 #else
   mkdir(path, 0777);
 #endif
@@ -162,7 +164,7 @@ void pony_mkdir(const char* path)
 char* get_file_name(char* filename)
 {
 #ifdef PLATFORM_IS_WINDOWS
-  PathStripPath((LPSTR) filename);
+  PathStripPathA((LPSTR) filename);
   return filename;
 #else
   return basename(filename);
@@ -219,7 +221,7 @@ bool get_compiler_exe_path(char* output_path, const char* argv0)
   success = (argv0 == NULL) ? success : success; // hush compiler warning
 #ifdef PLATFORM_IS_WINDOWS
   // Specified size *includes* nul terminator
-  GetModuleFileName(NULL, output_path, FILENAME_MAX);
+  GetModuleFileNameA(NULL, output_path, FILENAME_MAX);
   success = (GetLastError() == ERROR_SUCCESS);
 #elif defined PLATFORM_IS_LINUX
   // Specified size *excludes* nul terminator

@@ -16,7 +16,7 @@ typedef void* plugin_handle_t;
 
 #elif defined(PLATFORM_IS_WINDOWS)
 #  include <Windows.h>
-#  define PLUGIN_LOAD(path) LoadLibrary(path)
+#  define PLUGIN_LOAD(path) LoadLibraryA(path)
 #  define PLUGIN_UNLOAD(handle) FreeLibrary(handle)
 #  define PLUGIN_SYMBOL(handle, name) GetProcAddress(handle, name)
 

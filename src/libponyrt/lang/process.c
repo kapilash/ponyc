@@ -74,7 +74,7 @@ PONY_API size_t ponyint_win_process_create(
     uint32_t* error_code,
     char** error_message)
 {
-    STARTUPINFO si;
+    STARTUPINFOA si;
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags |= STARTF_USESTDHANDLES;
@@ -85,7 +85,7 @@ PONY_API size_t ponyint_win_process_create(
     PROCESS_INFORMATION pi;
     ZeroMemory(&pi, sizeof(pi));
 
-    BOOL success = CreateProcess(
+    BOOL success = CreateProcessA(
         appname,
         cmdline,     // command line
         NULL,        // process security attributes

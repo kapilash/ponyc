@@ -20,9 +20,26 @@ endif()
 
 # We require LLVM, Google Test and Google Benchmark
 if(NOT PONY_CROSS_LIBPONYRT)
-    find_package(LLVM REQUIRED CONFIG PATHS "build/libs/lib/cmake/llvm" "build/libs/lib64/cmake/llvm" NO_DEFAULT_PATH)
-    find_package(GTest REQUIRED CONFIG PATHS "build/libs/lib/cmake/GTest" "build/libs/lib64/cmake/GTest" NO_DEFAULT_PATH)
-    find_package(benchmark REQUIRED CONFIG PATHS "build/libs/lib/cmake/benchmark" "build/libs/lib64/cmake/benchmark" NO_DEFAULT_PATH)
+    set(LLVM_COMPONENTS
+        core
+        demangle
+        objcarcopts
+        orcjit
+        x86asmparser
+        x86codegen
+        x86desc
+        x86info
+    )
+    find_package(LLVM CONFIG REQUIRED)
+    list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
+    add_definitions(${LLVM_DEFINITIONS})
+    #target_include_directories(main PRIVATE ${LLVM_INCLUDE_DIRS})
+    llvm_map_components_to_libnames(PONYC_LLVM_LIBS ${LLVM_COMPONENTS})
+    find_package(GTest CONFIG REQUIRED)
+    find_package(benchmark CONFIG REQUIRED)
+    #find_package(LLVM REQUIRED CONFIG PATHS "build/libs/lib/cmake/llvm" "build/libs/lib64/cmake/llvm" NO_DEFAULT_PATH)
+    #find_package(GTest REQUIRED CONFIG PATHS "build/libs/lib/cmake/GTest" "build/libs/lib64/cmake/GTest" NO_DEFAULT_PATH)
+    #find_package(benchmark REQUIRED CONFIG PATHS "build/libs/lib/cmake/benchmark" "build/libs/lib64/cmake/benchmark" NO_DEFAULT_PATH)
 endif()
 
 # Uses
@@ -144,7 +161,6 @@ endif()
 
 if(MSVC)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-
     # Disable some warnings for Windows, and compile Debug builds with the regular CRT.
     add_compile_options(
         /wd4142
@@ -154,7 +170,6 @@ if(MSVC)
         /EHa
     )
     add_compile_definitions(
-        _MBCS
         _CRT_SECURE_NO_WARNINGS
         $<$<CONFIG:Debug>:_ITERATOR_DEBUG_LEVEL=0>
     )
@@ -193,6 +208,8 @@ else()
 
     add_subdirectory(benchmark/libponyc)
     add_subdirectory(benchmark/libponyrt)
+    target_include_directories(libponyc PRIVATE ${LLVM_INCLUDE_DIRS})
+    target_include_directories(ponyc PRIVATE ${LLVM_INCLUDE_DIRS})
 
     install(TARGETS
         ponyc

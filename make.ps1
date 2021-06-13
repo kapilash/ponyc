@@ -114,10 +114,6 @@ elseif (![System.IO.Path]::IsPathRooted($Prefix))
 
 Write-Output "make.ps1 $Command -Config $Config -Generator `"$Generator`" -Prefix `"$Prefix`" -Version `"$Version`""
 
-if (($Command.ToLower() -ne "libs") -and ($Command.ToLower() -ne "distclean") -and !(Test-Path -Path $libsDir))
-{
-    throw "Libs directory '$libsDir' does not exist; you may need to run 'make.ps1 libs' first."
-}
 
 if ($Generator.Contains("Win64") -or $Generator.Contains("Win32"))
 {
@@ -183,7 +179,7 @@ switch ($Command.ToLower())
         if ($Arch.Length -gt 0)
         {
             Write-Output "cmake.exe -B `"$buildDir`" -S `"$srcDir`" -G `"$Generator`" -A $Arch -Thost=x64 -DCMAKE_INSTALL_PREFIX=`"$Prefix`" -DCMAKE_BUILD_TYPE=`"$Config`" -DPONYC_VERSION=`"$Version`""
-            & cmake.exe -B "$buildDir" -S "$srcDir" -G "$Generator" -A $Arch -Thost=x64 -DCMAKE_INSTALL_PREFIX="$Prefix" -DCMAKE_BUILD_TYPE="$Config" -DPONYC_VERSION="$Version" $lto_flag --no-warn-unused-cli
+            & cmake.exe -B "$buildDir" -S "$srcDir" -G "$Generator" -A $Arch -Thost=x64 -DCMAKE_INSTALL_PREFIX="$Prefix" -DCMAKE_BUILD_TYPE="$Config" -DPONYC_VERSION="$Version" -DCMAKE_TOOLCHAIN_FILE=D:\source\vcpkg\scripts\buildsystems\vcpkg.cmake   $lto_flag --no-warn-unused-cli
         }
         else
         {
@@ -197,7 +193,7 @@ switch ($Command.ToLower())
     "build"
     {
         Write-Output "cmake.exe --build `"$buildDir`" --config $Config --target ALL_BUILD"
-        & cmake.exe --build "$buildDir" --config $Config --target ALL_BUILD
+        & cmake.exe --build "$buildDir" --config $Config -DCMAKE_TOOLCHAIN=D:/source/vcpkg/scripts/buildsystems/vcpkg.cmake --target ALL_BUILD
         $err = $LastExitCode
         if ($err -ne 0) { throw "Error: exit code $err" }
         break
@@ -206,7 +202,7 @@ switch ($Command.ToLower())
     {
         if (Test-Path $buildDir)
         {
-            Write-Output "cmake.exe --build `"buildDir`" --config $Config --target clean"
+            Write-Output "cmake.exe --build `"buildDir`" --config $Config  -DCMAKE_TOOLCHAIN=D:/source/vcpkg/scripts/buildsystems/vcpkg.cmake --target clean"
             & cmake.exe --build "$buildDir" --config $Config --target clean
         }
 

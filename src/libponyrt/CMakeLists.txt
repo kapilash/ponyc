@@ -53,7 +53,7 @@ set(_ll_except_obj "${CMAKE_BINARY_DIR}/except_try_catch.o")
 
 find_file(_llc_command
     NAMES llc.exe llc
-    PATHS "${CMAKE_BINARY_DIR}/../../libs/bin" "${CMAKE_BINARY_DIR}/../libs/bin"
+    PATHS "${CMAKE_BINARY_DIR}/../../libs/bin" "${CMAKE_BINARY_DIR}/../libs/bin" "$ENV{VCPKG_ROOT}/installed/x64-windows/tools/llvm"
 )
 
 add_library(libponyrt STATIC

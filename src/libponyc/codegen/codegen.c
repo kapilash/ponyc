@@ -691,7 +691,7 @@ static bool init_module(compile_t* c, ast_t* program, pass_opt_t* opt, bool jit)
   c->di_unit = LLVMDIBuilderCreateCompileUnit(c->di,
     LLVMDWARFSourceLanguageC_plus_plus, fileRef, version, strlen(version),
     opt->release, "", 0, 0, "", 0, LLVMDWARFEmissionFull,
-    0, false, false);
+      0, false, false, "", 0, "", 0);
 #endif
 
   // Empty frame stack.

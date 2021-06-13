@@ -1289,7 +1289,7 @@ static void doc_rm_star(const char* path)
       char* buf = doc_cat(path, name, "", "", "", &buf_len);
 
 #ifdef PLATFORM_IS_WINDOWS
-      DeleteFile(buf);
+      DeleteFileA(buf);
 #else
       remove(buf);
 #endif

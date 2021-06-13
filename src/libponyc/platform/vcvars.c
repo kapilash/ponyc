@@ -8,7 +8,7 @@
 #if defined(PLATFORM_IS_WINDOWS)
 
 #define REG_SDK_INSTALL_PATH \
-  TEXT("SOFTWARE\\WOW6432Node\\Microsoft\\Microsoft SDKs\\Windows\\")
+  "SOFTWARE\\WOW6432Node\\Microsoft\\Microsoft SDKs\\Windows\\"
 
 typedef struct vsinfo_t
 {
@@ -93,9 +93,9 @@ static bool query_registry(HKEY key, bool query_subkeys, query_callback_fn fn,
 
   for(DWORD i = 0; i < sub_keys; ++i)
   {
-    if(RegEnumKeyEx(key, i, name, &size, NULL, NULL, NULL, NULL)
+    if(RegEnumKeyExA(key, i, name, &size, NULL, NULL, NULL, NULL)
       != ERROR_SUCCESS ||
-      RegOpenKeyEx(key, name, 0, KEY_QUERY_VALUE, &node) != ERROR_SUCCESS)
+      RegOpenKeyExA(key, name, 0, KEY_QUERY_VALUE, &node) != ERROR_SUCCESS)
     {
       r = false;
       break;
@@ -117,9 +117,9 @@ static bool find_registry_key(char* path, query_callback_fn query,
   HKEY key;
 
   // Try global installations then user-only.
-  if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, path, 0,
+  if(RegOpenKeyExA(HKEY_LOCAL_MACHINE, path, 0,
       (KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE), &key) == ERROR_SUCCESS ||
-    RegOpenKeyEx(HKEY_CURRENT_USER, path, 0,
+    RegOpenKeyExA(HKEY_CURRENT_USER, path, 0,
       (KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE), &key) == ERROR_SUCCESS)
   {
     success = query_registry(key, query_subkeys, query, p);
@@ -135,13 +135,13 @@ static bool find_registry_value(char *path, char *name, search_t* p)
   HKEY key;
 
   // Try global installations then user-only.
-  if(RegOpenKeyEx(HKEY_LOCAL_MACHINE, path, 0,
+  if(RegOpenKeyExA(HKEY_LOCAL_MACHINE, path, 0,
       (KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE), &key) == ERROR_SUCCESS ||
-    RegOpenKeyEx(HKEY_CURRENT_USER, path, 0,
+    RegOpenKeyExA(HKEY_CURRENT_USER, path, 0,
       (KEY_ENUMERATE_SUB_KEYS | KEY_QUERY_VALUE), &key) == ERROR_SUCCESS)
   {
     DWORD size = MAX_PATH;
-    success = RegGetValue(key, NULL, name, RRF_RT_REG_SZ,
+    success = RegGetValueA(key, NULL, name, RRF_RT_REG_SZ,
       NULL, p->path, &size) == ERROR_SUCCESS;
   }
 
@@ -194,9 +194,9 @@ static void pick_newest_sdk(HKEY key, char* name, search_t* p)
   char new_path[MAX_PATH];
   char new_version[MAX_VER_LEN];
 
-  if(RegGetValue(key, NULL, "InstallationFolder", RRF_RT_REG_SZ, NULL,
+  if(RegGetValueA(key, NULL, "InstallationFolder", RRF_RT_REG_SZ, NULL,
       new_path, &path_len) == ERROR_SUCCESS &&
-    RegGetValue(key, NULL, "ProductVersion", RRF_RT_REG_SZ, NULL, new_version,
+    RegGetValueA(key, NULL, "ProductVersion", RRF_RT_REG_SZ, NULL, new_version,
       &version_len) == ERROR_SUCCESS)
   {
     uint64_t new_ver = get_version(new_version);
@@ -265,12 +265,12 @@ static bool find_kernel32(vcvars_t* vcvars, errors_t* errors)
 static bool find_executable(const char* path, const char* name,
   char* dest, bool recurse, errors_t* errors)
 {
-  TCHAR full_path[MAX_PATH + 1];
-  TCHAR best_path[MAX_PATH + 1];
+  char full_path[MAX_PATH + 1];
+  char best_path[MAX_PATH + 1];
   strcpy(full_path, path);
   strcat(full_path, name);
 
-  if((GetFileAttributes(full_path) != INVALID_FILE_ATTRIBUTES))
+  if((GetFileAttributesA(full_path) != INVALID_FILE_ATTRIBUTES))
   {
     strncpy(dest, full_path, MAX_PATH);
     return true;
@@ -294,7 +294,7 @@ static bool find_executable(const char* path, const char* name,
 
         strncpy(full_path, path, MAX_PATH);
         strncat(full_path, entry, MAX_PATH - strlen(full_path));
-        if ((GetFileAttributes(full_path) != FILE_ATTRIBUTE_DIRECTORY))
+        if ((GetFileAttributesA(full_path) != FILE_ATTRIBUTE_DIRECTORY))
           continue;
 
         uint64_t ver = get_version(entry);
@@ -320,7 +320,7 @@ static bool find_executable(const char* path, const char* name,
 }
 
 static bool find_executables(compile_t *c, const vsinfo_t *info, vcvars_t *vcvars,
-  TCHAR *install_path, TCHAR *link_path, TCHAR *lib_path, errors_t *errors)
+  char *install_path, char *link_path, char *lib_path, errors_t *errors)
 {
   strncat(install_path, info->search_path, MAX_PATH - strlen(install_path));
   if(c->opt->verbosity >= VERBOSITY_TOOL_INFO)
@@ -352,21 +352,21 @@ static bool find_executables(compile_t *c, const vsinfo_t *info, vcvars_t *vcvar
   return false;
 }
 
-static const TCHAR* VSWHERE_PATH =
+static const char* VSWHERE_PATH =
   "\"\"%ProgramFiles(x86)%\\Microsoft Visual Studio\\Installer\\vswhere.exe\" -prerelease -latest -products *\"";
 
 static bool find_msvcrt_and_linker(compile_t *c, vcvars_t* vcvars,
   errors_t *errors)
 {
-  TCHAR link_path[MAX_PATH + 1];
-  TCHAR lib_path[MAX_PATH + 1];
+  char link_path[MAX_PATH + 1];
+  char lib_path[MAX_PATH + 1];
   const vsinfo_t* info;
 
   // try using vswhere to find Visual Studio
   if (c->opt->verbosity >= VERBOSITY_TOOL_INFO)
     fprintf(stderr, "detecting Visual Studio via %s\n", VSWHERE_PATH);
 
-  TCHAR buffer[MAX_PATH * 2];
+  char buffer[MAX_PATH * 2];
   FILE *output;
   if ((output = _popen(VSWHERE_PATH, "rt")) != NULL)
   {

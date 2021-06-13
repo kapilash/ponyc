@@ -9,8 +9,8 @@ PONY_API char* pony_os_realpath(const char* path)
 #ifdef PLATFORM_IS_WINDOWS
   char resolved[FILENAME_MAX];
 
-  if(GetFullPathName(path, FILENAME_MAX, resolved, NULL) == 0 ||
-    GetFileAttributes(resolved) == INVALID_FILE_ATTRIBUTES)
+  if(GetFullPathNameA(path, FILENAME_MAX, resolved, NULL) == 0 ||
+    GetFileAttributesA(resolved) == INVALID_FILE_ATTRIBUTES)
     return NULL;
 #elif defined(PLATFORM_IS_POSIX_BASED)
   char resolved[PATH_MAX];
