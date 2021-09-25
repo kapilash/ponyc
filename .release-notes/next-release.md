@@ -107,3 +107,21 @@ actor Main
     env.out.print("The Float is " + float.string())
 ```
 
+## Fix erratic cycle detector triggering on some Arm systems
+
+Triggering of cycle detector runs was based on an assumption that our "tick" time source would monotonically increase. That is, that the values seen by getting a tick would always increase in value.
+
+This assumption is true as long as we have a hardware source of ticks to use. However, on some Arm systems, the hardware cycle counter isn't available to user code. On these these, we fall back to use `clock_gettime` as a source of ticks. When `clock_gettime` is the source of ticks, the ticks are no longer monotonically increasing.
+
+Usage of the cycle detector with the non-monotonically increasing tick sources would cause the cycle detector run very infrequently and somewhat erratically. This was most likely to be seen on hardware like the Raspberry Pi.
+
+## Fix non-release build crashes on Arm
+
+We've fixed a cause of "random" crashes that impacted at minimum, debug versions of Pony programs running on 32-bit Arm builds on the Raspberry Pi 4.
+
+It's likely that the crashes impacted debug versions of Pony programs running on all Arm systems, but we don't have enough testing infrastructure to know for sure.
+
+## Add Ubuntu 21.04 nightly builds and releases builds
+
+We've added nightly and release builds of ponyc that are built on Ubuntu 21.04. We'll continue supporting them through the end of life of this non-LTS version of Ubuntu.
+
